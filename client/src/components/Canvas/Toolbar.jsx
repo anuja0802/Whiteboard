@@ -17,7 +17,7 @@ const COLORS = [
 ];
 
 // Preset brush sizes
-const BRUSH_SIZES = [2, 4, 8, 16];
+const BRUSH_SIZES = [2, 5, 10, 18];
 
 export default function Toolbar({ onClear }) {
   const { tool, color, brushSize, setTool, setColor, setBrushSize } =
@@ -103,24 +103,32 @@ export default function Toolbar({ onClear }) {
         <div className="w-px h-6 bg-gray-700" />
 
         {/* ── BRUSH SIZES ── */}
-        <div className="flex gap-1.5 items-center">
-          {BRUSH_SIZES.map((size) => (
+        <div className="flex gap-2 items-center">
+        {BRUSH_SIZES.map((size) => (
             <button
-              key={size}
-              onClick={() => setBrushSize(size)}
-              title={`${size}px`}
-              className={`rounded-full flex items-center justify-center transition-all
-                ${brushSize === size
-                  ? 'bg-blue-600'
-                  : 'bg-gray-600 hover:bg-gray-500'
-                }`}
-              // Scale the button to visually represent the brush size
-              style={{
-                width: `${Math.max(size + 8, 16)}px`,
-                height: `${Math.max(size + 8, 16)}px`,
-              }}
+            key={size}
+            onClick={() => setBrushSize(size)}
+            title={`${size}px`}
+            className="relative flex items-center justify-center w-8 h-8 rounded-lg hover:bg-gray-800 transition-colors"
+            >
+            {/* Always show a fixed-size circle, but filled vs outlined shows active */}
+            <div
+                className="rounded-full transition-all"
+                style={{
+                width: `${size * 2.5}px`,
+                height: `${size * 2.5}px`,
+                minWidth: '4px',
+                minHeight: '4px',
+                maxWidth: '26px',
+                maxHeight: '26px',
+                backgroundColor: brushSize === size ? color : '#6b7280',
+                // Active = filled with current color, inactive = gray
+                outline: brushSize === size ? `2px solid ${color}` : '2px solid transparent',
+                outlineOffset: '2px',
+                }}
             />
-          ))}
+            </button>
+        ))}
         </div>
 
         {/* Divider */}
