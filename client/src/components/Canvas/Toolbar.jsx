@@ -17,7 +17,7 @@ const COLORS = [
 ];
 
 // Preset brush sizes
-const BRUSH_SIZES = [2, 5, 10, 18];
+const BRUSH_SIZES = [2, 5, 8, 15];
 
 export default function Toolbar({ onClear }) {
   const { tool, color, brushSize, setTool, setColor, setBrushSize } =

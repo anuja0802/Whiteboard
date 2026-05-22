@@ -1,31 +1,46 @@
-// canvasStore.js
-// All brush/tool settings live here.
-// Any component can read or update these without prop drilling.
-
 import { create } from 'zustand';
 
-const useCanvasStore = create((set) => ({
-  // Current active tool
-  tool: 'pen',          // 'pen' | 'eraser'
-  
-  // Brush settings
-  color: '#ffffff',     // Default white on dark canvas
-  brushSize: 4,         // Stroke width in pixels
-  
-  // Canvas history for undo/redo (Phase 9)
-  // We store it here so it's accessible from anywhere
-  history: [],
-  historyIndex: -1,
+const useCanvasStore = create((set, get) => ({
+  // Tool settings
+  tool: 'pen',
+  color: '#ffffff',
+  brushSize: 4,
+
+  // ── Infinite canvas state ──
+  // zoom: 1.0 = 100%, 0.5 = zoomed out, 2.0 = zoomed in
+  zoom: 1,
+  // panX/panY: how many pixels the world origin is offset from screen origin
+  panX: 0,
+  panY: 0,
+
+  // All strokes stored in WORLD coordinates
+  // Each stroke = { points: [{x,y}], color, brushSize, tool }
+  strokes: [],
+
+  // Currently-being-drawn stroke (not yet committed)
+  currentStroke: null,
 
   // Actions
   setTool: (tool) => set({ tool }),
   setColor: (color) => set({ color }),
   setBrushSize: (size) => set({ brushSize: size }),
-  
-  // We'll use these in Phase 9
-  pushHistory: (imageData) => set((state) => ({
-    history: [...state.history.slice(0, state.historyIndex + 1), imageData],
-    historyIndex: state.historyIndex + 1,
+
+  setZoom: (zoom) => set({ zoom: Math.min(Math.max(zoom, 0.05), 20) }),
+  setPan: (panX, panY) => set({ panX, panY }),
+
+  // Add a completed stroke to the permanent list
+  addStroke: (stroke) => set((state) => ({
+    strokes: [...state.strokes, stroke],
+    currentStroke: null,
+  })),
+
+  setCurrentStroke: (stroke) => set({ currentStroke: stroke }),
+
+  clearStrokes: () => set({ strokes: [], currentStroke: null }),
+
+  // Undo: remove last stroke (Phase 9 will expand this)
+  undoStroke: () => set((state) => ({
+    strokes: state.strokes.slice(0, -1),
   })),
 }));
 
