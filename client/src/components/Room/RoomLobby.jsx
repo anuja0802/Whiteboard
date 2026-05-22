@@ -13,7 +13,7 @@ function generateRoomId() {
 }
 
 export default function RoomLobby() {
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(localStorage.getItem('wb_username') || '');
   const [roomInput, setRoomInput] = useState('');
   const { setUsername: saveUsername, setRoom } = useRoomStore();
   const { joinRoom } = useSocket();
@@ -21,6 +21,8 @@ export default function RoomLobby() {
 
   const handleJoin = (roomId) => {
     if (!username.trim()) return alert('Please enter your name');
+    // Save to localStorage so it persists across page loads
+    localStorage.setItem('wb_username', username);
     saveUsername(username);
     setRoom(roomId);
     joinRoom(roomId, username);

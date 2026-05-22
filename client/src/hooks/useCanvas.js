@@ -1,7 +1,3 @@
-// useCanvas.js — Phase 4: Infinite Canvas
-// Big architecture change: we now store strokes in world coords
-// and use ctx.setTransform() to render everything in screen space.
-
 import { useRef, useEffect, useCallback } from 'react';
 import useCanvasStore from '../store/canvasStore';
 import socket from '../socket/socket';
@@ -23,6 +19,10 @@ export function useCanvas() {
   const lastPoint = useRef(null);
   const animFrameRef = useRef(null);
 
+  // Track remote users' last points for smooth segment drawing
+  // { userId: { x, y } }
+  const remoteLastPoints = useRef({});
+
   const {
     tool, color, brushSize,
     zoom, panX, panY,
@@ -31,7 +31,6 @@ export function useCanvas() {
     clearStrokes,
   } = useCanvasStore();
 
-  // Refs for event handlers (avoid stale closures)
   const toolRef = useRef(tool);
   const colorRef = useRef(color);
   const brushSizeRef = useRef(brushSize);
@@ -50,16 +49,15 @@ export function useCanvas() {
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { currentStrokeRef.current = currentStroke; }, [currentStroke]);
 
-  // Convert screen coordinates to world coordinates
-  // This is used when the user clicks/drags — we store in world space
-  const screenToWorld = useCallback((sx, sy) => {
-    return {
-      x: (sx - panXRef.current) / zoomRef.current,
-      y: (sy - panYRef.current) / zoomRef.current,
-    };
+  const getCtx = useCallback(() => {
+    return canvasRef.current?.getContext('2d') || null;
   }, []);
 
-  // Get mouse position relative to canvas
+  const screenToWorld = useCallback((sx, sy) => ({
+    x: (sx - panXRef.current) / zoomRef.current,
+    y: (sy - panYRef.current) / zoomRef.current,
+  }), []);
+
   const getCanvasPoint = useCallback((e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -69,8 +67,37 @@ export function useCanvas() {
     return screenToWorld(clientX - rect.left, clientY - rect.top);
   }, [screenToWorld]);
 
-  // drawStroke: renders ONE stroke onto the canvas using current transform
-  // ctx already has setTransform applied, so we draw in world coords
+  // Draw a single segment directly on canvas
+  // Used for BOTH local active drawing and incoming remote segments
+  // This bypasses React state entirely — direct imperative draw
+  const drawSegmentDirect = useCallback((ctx, x0, y0, x1, y1,
+    strokeColor, size, strokeTool) => {
+    ctx.lineWidth = strokeTool === 'eraser' ? size * 3 : size;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = strokeTool === 'eraser' ? '#111111' : strokeColor;
+
+    ctx.save();
+    // Apply current zoom/pan transform so world coords render correctly
+    ctx.setTransform(
+      zoomRef.current, 0, 0,
+      zoomRef.current,
+      panXRef.current, panYRef.current
+    );
+
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    const midX = (x0 + x1) / 2;
+    const midY = (y0 + y1) / 2;
+    ctx.quadraticCurveTo(x0, y0, midX, midY);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+
+    ctx.restore();
+  }, []);
+
+  // Full redraw — only called when zoom/pan changes or stroke committed
+  // NOT called on every mousemove
   const drawStroke = useCallback((ctx, stroke) => {
     if (!stroke.points || stroke.points.length < 2) return;
 
@@ -79,7 +106,9 @@ export function useCanvas() {
       : stroke.brushSize;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = stroke.tool === 'eraser' ? '#111111' : stroke.color;
+    ctx.strokeStyle = stroke.tool === 'eraser'
+      ? '#111111'
+      : stroke.color;
 
     ctx.beginPath();
     ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
@@ -87,7 +116,6 @@ export function useCanvas() {
     for (let i = 1; i < stroke.points.length; i++) {
       const prev = stroke.points[i - 1];
       const curr = stroke.points[i];
-      // Smooth with midpoint quadratic curve
       const midX = (prev.x + curr.x) / 2;
       const midY = (prev.y + curr.y) / 2;
       ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
@@ -95,77 +123,59 @@ export function useCanvas() {
     ctx.stroke();
   }, []);
 
-  // THE RENDER LOOP
-  // Every time zoom/pan/strokes change, we redraw everything.
-  // This is the core of the infinite canvas — clear then redraw with transform.
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-
-    // 1. Clear entire canvas
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset to identity
-    ctx.fillStyle = '#111111';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // 2. Draw grid (gives sense of infinite space)
-    drawGrid(ctx, canvas.width, canvas.height,
-      panXRef.current, panYRef.current, zoomRef.current);
-
-    // 3. Apply zoom + pan transform ONCE
-    // All subsequent drawing happens in world coordinates
-    ctx.setTransform(
-      zoomRef.current, 0,
-      0, zoomRef.current,
-      panXRef.current, panYRef.current
-    );
-
-    // 4. Draw all committed strokes
-    strokesRef.current.forEach(stroke => drawStroke(ctx, stroke));
-
-    // 5. Draw the current in-progress stroke
-    if (currentStrokeRef.current) {
-      drawStroke(ctx, currentStrokeRef.current);
-    }
-  }, [drawStroke]);
-
-  // Draw a subtle dot grid — gives sense of space and scale
   function drawGrid(ctx, width, height, panX, panY, zoom) {
-    const gridSize = 40; // world units between dots
-    const dotSize = 1;
-
+    const gridSize = 40;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-    // Calculate which grid lines are visible
     const startX = Math.floor(-panX / zoom / gridSize) * gridSize;
     const startY = Math.floor(-panY / zoom / gridSize) * gridSize;
     const endX = Math.ceil((width - panX) / zoom / gridSize) * gridSize;
     const endY = Math.ceil((height - panY) / zoom / gridSize) * gridSize;
 
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
-
     for (let x = startX; x <= endX; x += gridSize) {
       for (let y = startY; y <= endY; y += gridSize) {
-        // Convert world to screen
         const sx = x * zoom + panX;
         const sy = y * zoom + panY;
         ctx.beginPath();
-        ctx.arc(sx, sy, dotSize, 0, Math.PI * 2);
+        ctx.arc(sx, sy, 1, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 
-  // Re-render whenever state changes
+  // Full render — only triggered by zoom/pan/committed strokes
+  const render = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#111111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawGrid(ctx, canvas.width, canvas.height,
+      panXRef.current, panYRef.current, zoomRef.current);
+
+    ctx.setTransform(
+      zoomRef.current, 0, 0,
+      zoomRef.current,
+      panXRef.current, panYRef.current
+    );
+
+    strokesRef.current.forEach(stroke => drawStroke(ctx, stroke));
+  }, [drawStroke]);
+
+  // Re-render only when zoom/pan/committed strokes change
+  // NOT on currentStroke — that's drawn directly
   useEffect(() => {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     animFrameRef.current = requestAnimationFrame(render);
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [zoom, panX, panY, strokes, currentStroke, render]);
+  }, [zoom, panX, panY, strokes, render]);
 
-  // Canvas size setup
+  // Canvas resize
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -182,98 +192,166 @@ export function useCanvas() {
     return () => window.removeEventListener('resize', handleResize);
   }, [render]);
 
-  // Socket: receive remote strokes
+  // ── SOCKET LISTENERS ──
   useEffect(() => {
-    const handleRemoteStroke = (stroke) => {
-      // Remote strokes come in world coords already — just add them
-      useCanvasStore.getState().addStroke(stroke);
+    // FAST PATH: incoming remote segment draws directly to canvas
+    // No Zustand, no re-render, no RAF — just immediate draw
+    const handleRemoteSegment = (data) => {
+      const ctx = getCtx();
+      if (!ctx) return;
+
+      const userId = data.userId;
+
+      if (data.type === 'start') {
+        // User started a new stroke — reset their last point
+        remoteLastPoints.current[userId] = { x: data.x, y: data.y };
+        return;
+      }
+
+      if (data.type === 'move') {
+        const last = remoteLastPoints.current[userId];
+        if (!last) return;
+
+        // Draw directly — no state update, no re-render
+        drawSegmentDirect(
+          ctx,
+          last.x, last.y,
+          data.x, data.y,
+          data.color, data.brushSize, data.tool
+        );
+
+        remoteLastPoints.current[userId] = { x: data.x, y: data.y };
+      }
+
+      if (data.type === 'end') {
+        // Stroke finished — add to committed strokes for persistence
+        if (data.stroke) {
+          useCanvasStore.getState().addStroke(data.stroke);
+        }
+        delete remoteLastPoints.current[userId];
+      }
     };
 
     const handleRemoteClear = () => {
       clearStrokes();
+      remoteLastPoints.current = {};
     };
 
-    socket.on('stroke-received', handleRemoteStroke);
+    socket.on('stroke-received', handleRemoteSegment);
     socket.on('canvas-cleared', handleRemoteClear);
 
     return () => {
-      socket.off('stroke-received', handleRemoteStroke);
+      socket.off('stroke-received', handleRemoteSegment);
       socket.off('canvas-cleared', handleRemoteClear);
     };
-  }, [clearStrokes]);
+  }, [getCtx, drawSegmentDirect, clearStrokes]);
 
-  // Throttled socket emit for current stroke updates
-  const emitStroke = useRef(
-    throttle((stroke) => {
-      socket.emit('draw-stroke', stroke);
-    }, 16)
+  // Throttled emit — send segments as they happen
+  const emitSegment = useRef(
+    throttle((data) => {
+      socket.emit('draw-stroke', data);
+    }, 16) // 60fps max
   ).current;
 
-  // ── Drawing event handlers ──
+  // ── DRAWING HANDLERS ──
 
   const startDrawing = useCallback((e) => {
-    // Don't draw when middle-mouse panning
     if (e.button === 1) return;
-
     isDrawing.current = true;
     const point = getCanvasPoint(e);
     lastPoint.current = point;
 
-    // Start new stroke in world coordinates
-    const newStroke = {
+    // Initialize stroke in store
+    setCurrentStroke({
       points: [point],
       color: colorRef.current,
       brushSize: brushSizeRef.current,
       tool: toolRef.current,
-    };
-    setCurrentStroke(newStroke);
-  }, [getCanvasPoint, setCurrentStroke]);
+    });
+
+    // Tell others this user started drawing
+    emitSegment({
+      type: 'start',
+      x: point.x,
+      y: point.y,
+      userId: socket.id,
+      color: colorRef.current,
+      brushSize: brushSizeRef.current,
+      tool: toolRef.current,
+    });
+  }, [getCanvasPoint, setCurrentStroke, emitSegment]);
 
   const draw = useCallback((e) => {
     if (!isDrawing.current) return;
+    const ctx = getCtx();
+    if (!ctx) return;
 
     const point = getCanvasPoint(e);
+    const prev = lastPoint.current;
+    if (!prev) return;
+
+    // 1. Draw locally IMMEDIATELY — no state, pure canvas API
+    drawSegmentDirect(
+      ctx,
+      prev.x, prev.y,
+      point.x, point.y,
+      colorRef.current,
+      brushSizeRef.current,
+      toolRef.current
+    );
+
+    // 2. Accumulate points in store for persistence
     const current = currentStrokeRef.current;
-    if (!current) return;
+    if (current) {
+      // Update store silently — don't trigger re-render
+      currentStrokeRef.current = {
+        ...current,
+        points: [...current.points, point],
+      };
+      useCanvasStore.setState({ currentStroke: currentStrokeRef.current });
+    }
 
-    // Append point to current stroke
-    const updatedStroke = {
-      ...current,
-      points: [...current.points, point],
-    };
-    setCurrentStroke(updatedStroke);
-
-    // Emit to server for realtime sync
-    emitStroke(updatedStroke);
+    // 3. Emit segment to server (throttled)
+    emitSegment({
+      type: 'move',
+      x: point.x,
+      y: point.y,
+      userId: socket.id,
+      color: colorRef.current,
+      brushSize: brushSizeRef.current,
+      tool: toolRef.current,
+    });
 
     lastPoint.current = point;
-  }, [getCanvasPoint, setCurrentStroke, emitStroke]);
+  }, [getCtx, getCanvasPoint, drawSegmentDirect, emitSegment]);
 
   const stopDrawing = useCallback((e) => {
-    if (e && e.button === 1) return;
+    if (e?.button === 1) return;
     if (!isDrawing.current) return;
-
     isDrawing.current = false;
 
     const current = currentStrokeRef.current;
-    if (current && current.points.length > 0) {
-      // Commit the stroke to permanent storage
+    if (current?.points?.length > 0) {
+      // Commit to store — triggers one full re-render to bake stroke in
       addStroke(current);
+
+      // Tell others the stroke is complete with full data
+      socket.emit('draw-stroke', {
+        type: 'end',
+        userId: socket.id,
+        stroke: current, // full stroke for persistence
+      });
     }
 
     lastPoint.current = null;
-  }, [addStroke]);
+    setCurrentStroke(null);
+  }, [addStroke, setCurrentStroke]);
 
   const clearCanvas = useCallback(() => {
     clearStrokes();
+    remoteLastPoints.current = {};
     socket.emit('clear-canvas');
   }, [clearStrokes]);
 
-  return {
-    canvasRef,
-    startDrawing,
-    draw,
-    stopDrawing,
-    clearCanvas,
-  };
+  return { canvasRef, startDrawing, draw, stopDrawing, clearCanvas };
 }
