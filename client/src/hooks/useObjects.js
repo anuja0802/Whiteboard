@@ -1,11 +1,19 @@
-// useObjects.js
-// Handles all object operations and syncs them via Socket.IO.
-// Pattern: optimistic update (local first) then broadcast.
-
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import socket from '../socket/socket';
 import useObjectsStore from '../store/objectsStore';
 import useCanvasStore from '../store/canvasStore';
+
+// Debounce per object id — each object gets its own timer
+function debounce(fn, delay) {
+  const timers = {};
+  return (id, ...args) => {
+    clearTimeout(timers[id]);
+    timers[id] = setTimeout(() => {
+      fn(id, ...args);
+      delete timers[id];
+    }, delay);
+  };
+}
 
 export function useObjects() {
   const {
@@ -19,39 +27,25 @@ export function useObjects() {
 
   const { zoom, panX, panY } = useCanvasStore();
 
-  // Convert screen coords to world coords
-  // Needed when user clicks to place a new object
   const screenToWorld = useCallback((sx, sy) => ({
     x: (sx - panX) / zoom,
     y: (sy - panY) / zoom,
   }), [zoom, panX, panY]);
 
-  // Listen for remote object events
+  // Socket listeners
   useEffect(() => {
-    // Another user added an object
-    socket.on('object-added', (obj) => {
-      addObject(obj);
-    });
+    socket.on('object-added', (obj) => addObject(obj));
+    socket.on('object-updated', ({ id, updates }) => updateObject(id, updates));
+    socket.on('object-removed', ({ id }) => removeObject(id));
+    socket.on('objects-cleared', () => clearObjects());
+    socket.on('room-objects', (existingObjects) => setObjects(existingObjects));
 
-    // Another user moved/resized/edited an object
-    socket.on('object-updated', ({ id, updates }) => {
-      updateObject(id, updates);
-    });
-
-    // Another user deleted an object
-    socket.on('object-removed', ({ id }) => {
-      removeObject(id);
-    });
-
-    // Someone cleared the board
-    socket.on('objects-cleared', () => {
-      clearObjects();
-    });
-
-    // When joining a room that has existing objects
-    socket.on('room-objects', (existingObjects) => {
-      setObjects(existingObjects);
-    });
+    const handleBoardState = ({ objects }) => {
+      if (objects && Object.keys(objects).length > 0) {
+        setObjects(objects);
+      }
+    };
+    socket.on('board-state', handleBoardState);
 
     return () => {
       socket.off('object-added');
@@ -59,15 +53,24 @@ export function useObjects() {
       socket.off('object-removed');
       socket.off('objects-cleared');
       socket.off('room-objects');
+      socket.off('board-state', handleBoardState);
     };
   }, [addObject, updateObject, removeObject, clearObjects, setObjects]);
 
-  // Create and broadcast a new sticky note
+  // Debounced emit — sends updates to server at most every 100ms per object
+  // This prevents flooding the server during drag operations
+  const debouncedEmit = useRef(
+    debounce((id, updates) => {
+      socket.emit('object-update', { id, updates });
+    }, 100)
+  ).current;
+
+  // Create sticky note
   const createStickyNote = useCallback((screenX, screenY) => {
     const worldPos = screenToWorld(screenX, screenY);
     const obj = {
       type: 'sticky',
-      x: worldPos.x - 100, // center on click
+      x: worldPos.x - 100,
       y: worldPos.y - 60,
       width: 200,
       height: 150,
@@ -79,11 +82,11 @@ export function useObjects() {
     return created;
   }, [addObject, screenToWorld]);
 
-  // Create and broadcast a shape
+  // Create shape
   const createShape = useCallback((type, screenX, screenY) => {
     const worldPos = screenToWorld(screenX, screenY);
     const obj = {
-      type, // 'rect' or 'circle'
+      type,
       x: worldPos.x - 60,
       y: worldPos.y - 40,
       width: 120,
@@ -97,7 +100,7 @@ export function useObjects() {
     return created;
   }, [addObject, screenToWorld]);
 
-  // Create an arrow
+  // Create arrow
   const createArrow = useCallback((screenX, screenY) => {
     const worldPos = screenToWorld(screenX, screenY);
     const obj = {
@@ -113,13 +116,13 @@ export function useObjects() {
     return created;
   }, [addObject, screenToWorld]);
 
-  // Update and broadcast object changes (move, resize, edit)
+  // Update locally immediately + debounced server emit
   const updateAndBroadcast = useCallback((id, updates) => {
-    updateObject(id, updates);
-    socket.emit('object-update', { id, updates });
-  }, [updateObject]);
+    updateObject(id, updates);       // instant local update
+    debouncedEmit(id, updates);      // debounced server sync
+  }, [updateObject, debouncedEmit]);
 
-  // Delete and broadcast
+  // Delete immediately — no debounce needed
   const removeAndBroadcast = useCallback((id) => {
     removeObject(id);
     socket.emit('object-remove', { id });

@@ -1,74 +1,109 @@
-// objectHandlers.js
-// Relay object events to everyone in the room.
-// Also stores objects in memory per room so new joiners
-// get existing objects. (Phase 7 will move this to MongoDB)
-
-// In-memory room objects store
-// { roomId: { objectId: objectData } }
-const roomObjects = {};
+const Board = require('../models/Board');
 
 module.exports = function objectHandlers(io, socket) {
 
-  // New user joined — send them existing objects
-  socket.on('request-objects', () => {
-    const objs = roomObjects[socket.roomId] || {};
-    socket.emit('room-objects', objs);
+  // User joined — objects are now sent via board-state in roomHandlers
+  // This is kept as a fallback
+  socket.on('request-objects', async () => {
+    if (!socket.roomId) return;
+    try {
+      const board = await Board.findOne({ roomId: socket.roomId });
+      if (board) {
+        socket.emit('room-objects', board.getObjectsAsPlain());
+      } else {
+        socket.emit('room-objects', {});
+      }
+    } catch (err) {
+      socket.emit('room-objects', {});
+    }
   });
 
-  // User added an object
-  socket.on('object-add', (obj) => {
+  // Object added
+  socket.on('object-add', async (obj) => {
     if (!socket.roomId) return;
 
-    // Store in memory
-    if (!roomObjects[socket.roomId]) {
-      roomObjects[socket.roomId] = {};
-    }
-    roomObjects[socket.roomId][obj.id] = obj;
-
-    // Broadcast to others
+    // Relay to others immediately
     socket.to(socket.roomId).emit('object-added', obj);
+
+    // Save to MongoDB
+    try {
+      await Board.findOneAndUpdate(
+        { roomId: socket.roomId },
+        {
+          $set: {
+            [`objects.${obj.id}`]: obj,
+            lastActiveAt: new Date(),
+          },
+        },
+        { upsert: true }
+      );
+    } catch (err) {
+      // silent
+    }
   });
 
-  // User updated an object (moved, resized, edited)
-  socket.on('object-update', ({ id, updates }) => {
+  // Object updated (moved, resized, text edited)
+  socket.on('object-update', async ({ id, updates }) => {
     if (!socket.roomId) return;
 
-    // Update in memory
-    if (roomObjects[socket.roomId]?.[id]) {
-      roomObjects[socket.roomId][id] = {
-        ...roomObjects[socket.roomId][id],
-        ...updates,
-      };
-    }
-
+    // Relay to others immediately
     socket.to(socket.roomId).emit('object-updated', { id, updates });
-  });
 
-  // User deleted an object
-  socket.on('object-remove', ({ id }) => {
-    if (!socket.roomId) return;
+    // Build MongoDB dot-notation update
+    // e.g. { 'objects.abc123.x': 100, 'objects.abc123.y': 200 }
+    try {
+      const setFields = { lastActiveAt: new Date() };
+      Object.keys(updates).forEach((key) => {
+        setFields[`objects.${id}.${key}`] = updates[key];
+      });
 
-    if (roomObjects[socket.roomId]) {
-      delete roomObjects[socket.roomId][id];
+      await Board.findOneAndUpdate(
+        { roomId: socket.roomId },
+        { $set: setFields },
+        { upsert: true }
+      );
+    } catch (err) {
+      // silent
     }
+  });
 
+  // Object removed
+  socket.on('object-remove', async ({ id }) => {
+    if (!socket.roomId) return;
+
+    // Relay to others immediately
     socket.to(socket.roomId).emit('object-removed', { id });
+
+    // Remove from MongoDB
+    try {
+      await Board.findOneAndUpdate(
+        { roomId: socket.roomId },
+        {
+          $unset: { [`objects.${id}`]: '' },
+          $set: { lastActiveAt: new Date() },
+        }
+      );
+    } catch (err) {
+      // silent
+    }
   });
 
-  // Board cleared
-  socket.on('clear-objects', () => {
+  // Clear all objects
+  socket.on('clear-objects', async () => {
     if (!socket.roomId) return;
-    roomObjects[socket.roomId] = {};
+
+    // Relay to others
     socket.to(socket.roomId).emit('objects-cleared');
-  });
 
-  // Cleanup when room is empty
-  socket.on('disconnecting', () => {
-    if (!socket.roomId) return;
-    const room = io.sockets.adapter.rooms.get(socket.roomId);
-    // If only this socket is left, room will be empty after disconnect
-    if (room && room.size === 1) {
-      delete roomObjects[socket.roomId];
+    // Clear from MongoDB
+    try {
+      await Board.findOneAndUpdate(
+        { roomId: socket.roomId },
+        { $set: { objects: {}, lastActiveAt: new Date() } },
+        { upsert: true }
+      );
+    } catch (err) {
+      // silent
     }
   });
 };

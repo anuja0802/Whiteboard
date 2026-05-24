@@ -2,7 +2,7 @@ const { Server } = require('socket.io');
 const roomHandlers = require('./roomHandlers');
 const drawingHandlers = require('./drawingHandlers');
 const cursorHandlers = require('./cursorHandlers');
-const objectHandlers = require('./objectHandlers'); // NEW
+const objectHandlers = require('./objectHandlers');
 
 function initSocket(server) {
   const io = new Server(server, {
@@ -15,16 +15,10 @@ function initSocket(server) {
   });
 
   io.on('connection', (socket) => {
-    console.log(`✅ User connected: ${socket.id}`);
-
     roomHandlers(io, socket);
     drawingHandlers(io, socket);
     cursorHandlers(io, socket);
-    objectHandlers(io, socket); // NEW
-
-    socket.on('disconnect', (reason) => {
-      console.log(`❌ User disconnected: ${socket.id} | Reason: ${reason}`);
-    });
+    objectHandlers(io, socket);
   });
 
   return io;

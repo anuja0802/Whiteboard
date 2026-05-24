@@ -1,18 +1,14 @@
-// useSocket.js - Updated
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import socket from '../socket/socket';
 import useRoomStore from '../store/roomStore';
 
 export function useSocket() {
-  const { roomId } = useParams(); // Get roomId from URL
   const { addUser, removeUser, setUsers, setConnected, username } = useRoomStore();
+  const hasJoined = useRef(false); // guard against double join
 
   useEffect(() => {
-    // Connect socket
-    if (!socket.connected) {
-      socket.connect();
-    }
+    if (!socket.connected) socket.connect();
 
     socket.on('user-joined', (user) => addUser(user));
     socket.on('user-left', ({ userId }) => removeUser(userId));
@@ -26,11 +22,15 @@ export function useSocket() {
       socket.off('room-users');
       socket.off('connect');
       socket.off('disconnect');
+      hasJoined.current = false; // reset on unmount
     };
   }, []);
 
-  const joinRoom = (rid, uname) => {
-    socket.emit('join-room', { roomId: rid, username: uname });
+  const joinRoom = (roomId, uname) => {
+    // Prevent joining the same room multiple times
+    if (hasJoined.current) return;
+    hasJoined.current = true;
+    socket.emit('join-room', { roomId, username: uname });
   };
 
   return { socket, joinRoom };

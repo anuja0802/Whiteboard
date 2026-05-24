@@ -193,38 +193,24 @@ export function useCanvas() {
   }, [render]);
 
   // ── SOCKET LISTENERS ──
-  useEffect(() => {
-    // FAST PATH: incoming remote segment draws directly to canvas
-    // No Zustand, no re-render, no RAF — just immediate draw
+useEffect(() => {
     const handleRemoteSegment = (data) => {
       const ctx = getCtx();
       if (!ctx) return;
-
       const userId = data.userId;
 
       if (data.type === 'start') {
-        // User started a new stroke — reset their last point
         remoteLastPoints.current[userId] = { x: data.x, y: data.y };
         return;
       }
-
       if (data.type === 'move') {
         const last = remoteLastPoints.current[userId];
         if (!last) return;
-
-        // Draw directly — no state update, no re-render
-        drawSegmentDirect(
-          ctx,
-          last.x, last.y,
-          data.x, data.y,
-          data.color, data.brushSize, data.tool
-        );
-
+        drawSegmentDirect(ctx, last.x, last.y, data.x, data.y,
+          data.color, data.brushSize, data.tool);
         remoteLastPoints.current[userId] = { x: data.x, y: data.y };
       }
-
       if (data.type === 'end') {
-        // Stroke finished — add to committed strokes for persistence
         if (data.stroke) {
           useCanvasStore.getState().addStroke(data.stroke);
         }
@@ -237,12 +223,25 @@ export function useCanvas() {
       remoteLastPoints.current = {};
     };
 
+    // NEW: load saved board state when joining a room
+    const handleBoardState = ({ strokes }) => {
+      if (!strokes || strokes.length === 0) return;
+      console.log(`🎨 Loading ${strokes.length} strokes from DB`);
+      // Add all saved strokes to the store
+      // The render loop will draw them automatically
+      strokes.forEach(stroke => {
+        useCanvasStore.getState().addStroke(stroke);
+      });
+    };
+
     socket.on('stroke-received', handleRemoteSegment);
     socket.on('canvas-cleared', handleRemoteClear);
+    socket.on('board-state', handleBoardState); // NEW
 
     return () => {
       socket.off('stroke-received', handleRemoteSegment);
       socket.off('canvas-cleared', handleRemoteClear);
+      socket.off('board-state', handleBoardState); // NEW
     };
   }, [getCtx, drawSegmentDirect, clearStrokes]);
 
