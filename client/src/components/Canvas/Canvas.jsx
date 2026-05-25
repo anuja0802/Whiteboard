@@ -6,6 +6,8 @@ import { usePanZoom } from '../../hooks/usePanZoom';
 import { useCursor } from '../../hooks/useCursor';
 import { useObjects } from '../../hooks/useObjects';
 import { useHistory } from '../../hooks/useHistory';
+import { motion, AnimatePresence } from 'framer-motion';
+import LoadingScreen from '../UI/LoadingScreen';
 import useRoomStore from '../../store/roomStore';
 import useCanvasStore from '../../store/canvasStore';
 import useObjectsStore from '../../store/objectsStore';
@@ -23,7 +25,7 @@ export default function Canvas() {
   const tool = useCanvasStore(state => state.tool);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [nameInput, setNameInput] = useState('');
-
+  const [isLoading, setIsLoading] = useState(true);
   const { undo, redo, canUndo, canRedo } = useHistory();
   const { canvasRef, startDrawing, draw, stopDrawing, clearCanvas } = useCanvas();
 
@@ -40,6 +42,7 @@ export default function Canvas() {
     if (roomId && savedName) {
       joinRoom(roomId, savedName);
       setTimeout(() => socket.emit('request-objects'), 500);
+      setTimeout(() => setIsLoading(false), 1500);
     }
   }, [roomId]);
 
@@ -79,37 +82,132 @@ const handleCanvasClick = useCallback((e) => {
   }, [clearCanvas, clearObjects]);
 
   if (showNamePrompt) {
-    return (
-      <div className="w-screen h-screen bg-gray-950 flex items-center justify-center">
-        <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 w-full max-w-sm">
-          <h2 className="text-xl font-bold text-white mb-1">Join Room</h2>
-          <p className="text-gray-400 text-sm mb-6">
-            Enter your name to join{' '}
-            <span className="text-white font-mono">{roomId}</span>
-          </p>
-          <input
-            type="text"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
-            placeholder="Your name..."
-            autoFocus
-            maxLength={20}
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 mb-4"
-          />
-          <button
-            onClick={handleNameSubmit}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition-colors"
+      return (
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg-primary)',
+        }}>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{ width: '100%', maxWidth: 380, padding: '1rem' }}
           >
-            Join Board
-          </button>
+            <div className="glass" style={{ borderRadius: 16, padding: '1.75rem' }}>
+              <h2 style={{
+                fontSize: 18, fontWeight: 700,
+                color: 'var(--text-primary)',
+                marginBottom: 4,
+              }}>
+                Join Room
+              </h2>
+              <p style={{
+                fontSize: 13, color: 'var(--text-muted)',
+                marginBottom: 20,
+              }}>
+                Enter your name to join{' '}
+                <span style={{
+                  fontFamily: 'monospace',
+                  color: 'var(--neon-cyan)',
+                  background: 'rgba(77,168,199,0.1)',
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                }}>
+                  {roomId}
+                </span>
+              </p>
+              <input
+                type="text"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
+                placeholder="Your name..."
+                autoFocus
+                maxLength={20}
+                className="neon-input"
+                style={{
+                  width: '100%',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  fontSize: 14,
+                  marginBottom: 12,
+                }}
+              />
+              <button
+                onClick={handleNameSubmit}
+                className="btn-neon"
+                style={{
+                  width: '100%',
+                  borderRadius: 10,
+                  padding: '11px',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Join Board
+              </button>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-gray-950">
+    <div
+      className="relative w-screen h-screen overflow-hidden"
+      style={{
+        background: `
+          radial-gradient(circle at top left, rgba(77,168,199,0.07), transparent 30%),
+          radial-gradient(circle at bottom right, rgba(199,106,106,0.05), transparent 24%),
+          linear-gradient(
+            145deg,
+            #040816 0%,
+            #07101D 45%,
+            #0B1324 100%
+          )
+        `
+      }}
+    >
+
+
+      <div
+      className="absolute inset-0 pointer-events-none"
+      style={{ opacity: 0.14 }}
+    >
+      <svg width="100%" height="100%">
+        <defs>
+          <pattern
+            id="grid"
+            width="42"
+            height="42"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M 42 0 L 0 0 0 42"
+              fill="none"
+              stroke="rgba(148,163,184,0.05)"
+              strokeWidth="0.7"
+            />
+          </pattern>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#grid)" />
+      </svg>
+    </div>
+
+    {/* STEP 3 → Grain Texture */}
+    <div
+      className="absolute inset-0 pointer-events-none"
+      style={{
+        opacity: 0.018,
+        backgroundImage:
+          'radial-gradient(rgba(255,255,255,0.4) 0.5px, transparent 0.5px)',
+        backgroundSize: '3px 3px',
+      }}
+    />
 
       {/* Layer 1: Canvas — onClick only fires when clicking the canvas itself */}
       <canvas
@@ -149,13 +247,35 @@ const handleCanvasClick = useCallback((e) => {
       <UsersPanel />
 
       {/* Zoom indicator */}
-      <div className="absolute bottom-4 right-4 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-400 font-mono select-none">
+      <div style={{
+        position: 'absolute',
+        bottom: 16, right: 16,
+        background: 'var(--glass-bg)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 10,
+        padding: '6px 12px',
+        fontSize: 12,
+        color: 'var(--text-muted)',
+        fontFamily: 'monospace',
+        userSelect: 'none',
+      }}>
         {Math.round(zoom * 100)}%
       </div>
 
       <RoomLink roomId={roomId} />
 
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-gray-700 select-none pointer-events-none">
+      <div style={{
+        position: 'absolute',
+        bottom: 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        fontSize: 11,
+        color: 'var(--text-dim)',
+        userSelect: 'none',
+        pointerEvents: 'none',
+        whiteSpace: 'nowrap',
+      }}>
         Scroll to pan · Ctrl+Scroll to zoom · Middle drag to pan
       </div>
     </div>
@@ -172,13 +292,38 @@ function RoomLink({ roomId }) {
   };
 
   return (
-    <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2">
-      <span className="text-xs text-gray-500">Room:</span>
-      <span className="text-xs text-white font-mono">{roomId}</span>
+    <div style={{
+      position: 'absolute',
+      bottom: 16, left: 16,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      background: 'var(--glass-bg)',
+      backdropFilter: 'blur(12px)',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: 10,
+      padding: '6px 12px',
+    }}>
+      <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Room</span>
+      <span style={{
+        fontSize: 12,
+        color: 'var(--text-primary)',
+        fontFamily: 'monospace',
+        letterSpacing: '0.05em',
+      }}>
+        {roomId}
+      </span>
       <button
         onClick={handleCopy}
-        className="text-xs transition-colors ml-1"
-        style={{ color: copied ? '#4ade80' : '#60a5fa' }}
+        style={{
+          fontSize: 11,
+          color: copied ? '#22c55e' : 'var(--neon-cyan)',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 0,
+          transition: 'color 0.2s',
+        }}
       >
         {copied ? 'Copied!' : 'Copy link'}
       </button>
