@@ -1,25 +1,50 @@
-// ObjectsLayer.jsx — full rewrite
+// ObjectsLayer.jsx — clean version
 import { useCallback } from 'react';
 import useObjectsStore from '../../store/objectsStore';
 import useCanvasStore from '../../store/canvasStore';
-import { useObjects } from '../../hooks/useObjects';
+import useHistoryStore from '../../store/historyStore';
+import socket from '../../socket/socket';
 import StickyNote from './StickyNote';
 import Shape from './Shape';
 import Arrow from './Arrow';
 
+// Debounce for updates
+function debounce(fn, delay) {
+  const timers = {};
+  return (id, ...args) => {
+    clearTimeout(timers[id]);
+    timers[id] = setTimeout(() => { fn(id, ...args); delete timers[id]; }, delay);
+  };
+}
+
+const debouncedUpdateEmit = debounce((id, updates) => {
+  socket.emit('object-update', { id, updates });
+}, 100);
+
 export default function ObjectsLayer() {
   const { objects, clearSelected } = useObjectsStore();
-  const { tool } = useCanvasStore();
-  const { updateAndBroadcast, removeAndBroadcast } = useObjects();
+  const tool = useCanvasStore(state => state.tool);
+
+  const updateAndBroadcast = useCallback((id, updates) => {
+    useObjectsStore.getState().updateObject(id, updates);
+    debouncedUpdateEmit(id, updates);
+  }, []);
+
+  const removeAndBroadcast = useCallback((id) => {
+    const obj = useObjectsStore.getState().objects[id];
+    useObjectsStore.getState().clearSelected();
+    useObjectsStore.getState().removeObject(id);
+    socket.emit('object-remove', { id });
+    if (obj) {
+      useHistoryStore.getState().push({ type: 'object-remove', object: obj });
+    }
+  }, []);
 
   const handleLayerClick = useCallback(() => {
     clearSelected();
   }, [clearSelected]);
 
   return (
-    // The container div is always pointer-events: none
-    // Individual objects control their OWN pointer events
-    // This way delete buttons always work regardless of tool
     <div
       className="absolute inset-0"
       style={{ zIndex: 20, pointerEvents: 'none' }}
@@ -31,10 +56,8 @@ export default function ObjectsLayer() {
           obj,
           onUpdate: updateAndBroadcast,
           onRemove: removeAndBroadcast,
-          // Pass current tool so each object decides its own behavior
           currentTool: tool,
         };
-
         if (obj.type === 'sticky') return <StickyNote {...props} />;
         if (obj.type === 'rect' || obj.type === 'circle') return <Shape {...props} />;
         if (obj.type === 'arrow') return <Arrow {...props} />;

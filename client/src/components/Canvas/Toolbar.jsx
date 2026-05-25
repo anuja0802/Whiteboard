@@ -1,8 +1,13 @@
 import useCanvasStore from '../../store/canvasStore';
-import { useObjects } from '../../hooks/useObjects';
 import brushIcon from "../../assets/brush.svg"
 import eraserIcon from "../../assets/eraser(pink).svg";
-import RectIcon from "../../assets/rectangle.svg";
+import RectIcon from "../../assets/rectangle2.svg";
+import circleIcon from "../../assets/circle.svg";
+import notesIcon from "../../assets/notes.svg";
+import selectIcon from "../../assets/select.svg";
+import RedoIcon from "../../assets/redo.svg";
+import UndoIcon from "../../assets/undo.svg";
+import ArrowIcon from "../../assets/arrow2.svg";
 
 const COLORS = [
   '#ffffff', '#f87171', '#fb923c', '#fbbf24',
@@ -11,7 +16,7 @@ const COLORS = [
 
 const BRUSH_SIZES = [2, 5, 8, 15];
 
-export default function Toolbar({ onClear }) {
+export default function Toolbar({ onClear, onUndo, onRedo, canUndo, canRedo }) {
   const { tool, color, brushSize, setTool, setColor, setBrushSize } =
     useCanvasStore();
 
@@ -26,7 +31,7 @@ export default function Toolbar({ onClear }) {
             onClick={() => setTool('pen')}
             title="Pen (draw)"
           >
-            <img src={brushIcon} alt="Eraser" className="w-7 h-7" />
+            <img src={brushIcon} alt="Brush" className="w-8 h-8" />
           </ToolButton>
 
           <ToolButton
@@ -34,7 +39,7 @@ export default function Toolbar({ onClear }) {
             onClick={() => setTool('eraser')}
             title="Eraser"
           >
-            <img src={eraserIcon} alt="Eraser" className="w-5 h-5" />
+            <img src={eraserIcon} alt="Eraser" className="w-6 h-7" />
           </ToolButton>
         </div>
 
@@ -46,33 +51,41 @@ export default function Toolbar({ onClear }) {
             active={tool === 'sticky'}
             onClick={() => setTool('sticky')}
             title="Sticky Note"
-          >📝</ToolButton>
+          >
+            <img src={notesIcon} alt="Sticky note" className="w-7 h-7" />
+          </ToolButton>
 
           <ToolButton
             active={tool === 'rect'}
             onClick={() => setTool('rect')}
             title="Rectangle"
           >
-            <img src={RectIcon} alt="Eraser" className="w-7 h-7" />
+            <img src={RectIcon} alt="Rectangle" className="w-7 h-7" />
           </ToolButton>
 
           <ToolButton
             active={tool === 'circle'}
             onClick={() => setTool('circle')}
             title="Circle"
-          >⭕</ToolButton>
+          >
+            <img src={circleIcon} alt="Circle" className="w-7 h-7" />
+          </ToolButton>
 
           <ToolButton
             active={tool === 'arrow'}
             onClick={() => setTool('arrow')}
             title="Arrow"
-          >↗️</ToolButton>
+          >
+            <img src={ArrowIcon} alt="Arrow" className="w-6 h-8" />
+          </ToolButton>
 
           <ToolButton
             active={tool === 'select'}
             onClick={() => setTool('select')}
             title="Select / Move"
-          >🖱️</ToolButton>
+          >
+            <img src={selectIcon} alt="Select/Drag" className="w-7 h-7" />
+          </ToolButton>
         </div>
 
         <Divider />
@@ -87,14 +100,16 @@ export default function Toolbar({ onClear }) {
               style={{
                 width: 22, height: 22,
                 backgroundColor: c,
-                borderColor: color === c ? '#60a5fa' : 'transparent',
+                borderColor: color === c ? '#1d5daa' : 'transparent',
                 transform: color === c ? 'scale(1.2)' : 'scale(1)',
               }}
             />
           ))}
 
           <label className="w-8 h-8 rounded-full border-2 border-gray-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-110 transition-transform">
-            <span className="text-m">🎨</span>
+            <span className="text-m"
+            title = "More colors"
+            >🎨</span>
             <input
               type="color"
               value={color}
@@ -134,6 +149,26 @@ export default function Toolbar({ onClear }) {
 
         <Divider />
 
+        {/* Undo/Redo */}
+        <div className="flex gap-1">
+          <ToolButton
+            onClick={onUndo}
+            title="Undo (Ctrl+Z)"
+            disabled={!canUndo}
+          >
+            <img src={UndoIcon} alt="Undo" className="w-7 h-7" />
+          </ToolButton>
+          <ToolButton
+            onClick={onRedo}
+            title="Redo (Ctrl+Y)"
+            disabled={!canRedo}
+          >
+            <img src={RedoIcon} alt="Redo" className="w-7 h-7" />
+          </ToolButton>
+        </div>
+
+        <Divider />
+
         {/* ── CLEAR ── */}
         <ToolButton onClick={onClear} title="Clear canvas">
           🗑️
@@ -145,15 +180,18 @@ export default function Toolbar({ onClear }) {
 }
 
 // Reusable tool button
-function ToolButton({ active, onClick, title, children }) {
+function ToolButton({ active, onClick, title, children, disabled }) {
   return (
     <button
       onClick={onClick}
       title={title}
+      disabled={disabled}
       className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg transition-colors
-        ${active
-          ? 'bg-blue-600 text-white'
-          : 'text-gray-400 hover:bg-gray-800'
+        ${disabled
+          ? 'opacity-30 cursor-not-allowed'
+          : active
+            ? 'bg-blue-600 text-white'
+            : 'text-gray-400 hover:bg-gray-800'
         }`}
     >
       {children}

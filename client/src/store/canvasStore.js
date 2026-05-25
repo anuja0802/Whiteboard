@@ -34,14 +34,14 @@ const useCanvasStore = create((set, get) => ({
     currentStroke: null,
   })),
 
+  // Remove stroke by id — used for undo
+  undoStroke: (strokeId) => set((state) => ({
+    strokes: state.strokes.filter(s => s.id !== strokeId),
+  })),
+
   setCurrentStroke: (stroke) => set({ currentStroke: stroke }),
 
   clearStrokes: () => set({ strokes: [], currentStroke: null }),
-
-  // Undo: remove last stroke (Phase 9 will expand this)
-  undoStroke: () => set((state) => ({
-    strokes: state.strokes.slice(0, -1),
-  })),
 }));
 
 export default useCanvasStore;

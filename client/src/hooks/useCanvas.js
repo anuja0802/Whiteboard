@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import useCanvasStore from '../store/canvasStore';
 import socket from '../socket/socket';
+import useHistoryStore from '../store/historyStore';
 
 function throttle(fn, delay) {
   let lastCall = 0;
@@ -226,12 +227,9 @@ useEffect(() => {
     // NEW: load saved board state when joining a room
     const handleBoardState = ({ strokes }) => {
       if (!strokes || strokes.length === 0) return;
-      console.log(`🎨 Loading ${strokes.length} strokes from DB`);
       // Add all saved strokes to the store
       // The render loop will draw them automatically
-      strokes.forEach(stroke => {
-        useCanvasStore.getState().addStroke(stroke);
-      });
+      useCanvasStore.setState({ strokes });
     };
 
     socket.on('stroke-received', handleRemoteSegment);
@@ -255,30 +253,36 @@ useEffect(() => {
   // ── DRAWING HANDLERS ──
 
   const startDrawing = useCallback((e) => {
-    if (e.button === 1) return;
-    isDrawing.current = true;
-    const point = getCanvasPoint(e);
-    lastPoint.current = point;
+  if (e.button === 1) return;
 
-    // Initialize stroke in store
-    setCurrentStroke({
-      points: [point],
-      color: colorRef.current,
-      brushSize: brushSizeRef.current,
-      tool: toolRef.current,
-    });
+  // Don't start drawing if using object placement tools
+  const currentTool = toolRef.current;
+  if (currentTool === 'sticky' || currentTool === 'rect' || 
+      currentTool === 'circle' || currentTool === 'arrow' || 
+      currentTool === 'select') return;
 
-    // Tell others this user started drawing
-    emitSegment({
-      type: 'start',
-      x: point.x,
-      y: point.y,
-      userId: socket.id,
-      color: colorRef.current,
-      brushSize: brushSizeRef.current,
-      tool: toolRef.current,
-    });
-  }, [getCanvasPoint, setCurrentStroke, emitSegment]);
+  isDrawing.current = true;
+  const point = getCanvasPoint(e);
+  lastPoint.current = point;
+
+  setCurrentStroke({
+    id: `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    points: [point],
+    color: colorRef.current,
+    brushSize: brushSizeRef.current,
+    tool: toolRef.current,
+  });
+
+  emitSegment({
+    type: 'start',
+    x: point.x,
+    y: point.y,
+    userId: socket.id,
+    color: colorRef.current,
+    brushSize: brushSizeRef.current,
+    tool: toolRef.current,
+  });
+}, [getCanvasPoint, setCurrentStroke, emitSegment]);
 
   const draw = useCallback((e) => {
     if (!isDrawing.current) return;
@@ -325,26 +329,27 @@ useEffect(() => {
   }, [getCtx, getCanvasPoint, drawSegmentDirect, emitSegment]);
 
   const stopDrawing = useCallback((e) => {
-    if (e?.button === 1) return;
-    if (!isDrawing.current) return;
-    isDrawing.current = false;
+  if (e?.button === 1) return;
+  if (!isDrawing.current) return;
 
-    const current = currentStrokeRef.current;
-    if (current?.points?.length > 0) {
-      // Commit to store — triggers one full re-render to bake stroke in
-      addStroke(current);
+  // Don't process if using object tools
+  const currentTool = toolRef.current;
+  if (currentTool === 'sticky' || currentTool === 'rect' ||
+      currentTool === 'circle' || currentTool === 'arrow' ||
+      currentTool === 'select') return;
 
-      // Tell others the stroke is complete with full data
-      socket.emit('draw-stroke', {
-        type: 'end',
-        userId: socket.id,
-        stroke: current, // full stroke for persistence
-      });
-    }
+  isDrawing.current = false;
 
-    lastPoint.current = null;
-    setCurrentStroke(null);
-  }, [addStroke, setCurrentStroke]);
+  const current = currentStrokeRef.current;
+  if (current?.points?.length > 0) {
+    addStroke(current);
+    useHistoryStore.getState().push({ type: 'stroke-add', stroke: current });
+    socket.emit('draw-stroke', { type: 'end', userId: socket.id, stroke: current });
+  }
+
+  lastPoint.current = null;
+  setCurrentStroke(null);
+}, [addStroke, setCurrentStroke]);
 
   const clearCanvas = useCallback(() => {
     clearStrokes();

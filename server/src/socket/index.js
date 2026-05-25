@@ -3,6 +3,7 @@ const roomHandlers = require('./roomHandlers');
 const drawingHandlers = require('./drawingHandlers');
 const cursorHandlers = require('./cursorHandlers');
 const objectHandlers = require('./objectHandlers');
+const historyHandlers = require('./historyHandlers');
 
 function initSocket(server) {
   const io = new Server(server, {
@@ -19,6 +20,7 @@ function initSocket(server) {
     drawingHandlers(io, socket);
     cursorHandlers(io, socket);
     objectHandlers(io, socket);
+    historyHandlers(io, socket);
   });
 
   return io;

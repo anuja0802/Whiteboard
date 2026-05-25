@@ -12,73 +12,19 @@
 import useRoomStore from '../../store/roomStore';
 import useCanvasStore from '../../store/canvasStore';
 import { getUserColor } from '../../utils/colorUtils';
+import { memo } from 'react';
 // Each user gets a unique color based on their userId
 // This makes it easy to tell cursors apart
 
 // Individual cursor component
-function RemoteCursor({ userId, x, y, username }) {
-  const { zoom, panX, panY } = useCanvasStore();
-
-  // Convert world coordinates to screen coordinates
-  const screenX = x * zoom + panX;
-  const screenY = y * zoom + panY;
-
-  const color = getUserColor(userId);
-
-  return (
-    // pointer-events: none so the cursor overlay doesn't block mouse events
-    // on the canvas below
-    <div
-      className="absolute top-0 left-0 pointer-events-none"
-      style={{
-        // Use transform instead of left/top for GPU-accelerated movement
-        // This is a performance best practice — transform doesn't trigger layout
-        transform: `translate(${screenX}px, ${screenY}px)`,
-        // CSS transition smooths cursor movement between socket updates
-        // 80ms matches roughly 2-3 frames at 30fps emit rate
-        transition: 'transform 80ms linear',
-        zIndex: 10,
-      }}
-    >
-      {/* Cursor SVG arrow */}
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 20 20"
-        fill="none"
-        style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
-      >
-        <path
-          d="M3 2L17 9L10 11L7 18L3 2Z"
-          fill={color}
-          stroke="white"
-          strokeWidth="1"
-        />
-      </svg>
-
-      {/* Username label */}
-      <div
-        className="absolute top-5 left-1 text-xs font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap"
-        style={{
-          backgroundColor: color,
-          color: 'white',
-          fontSize: '11px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
-        }}
-      >
-        {username}
-      </div>
-    </div>
-  );
-}
-
-// Container that renders all remote cursors
+// Cursors.jsx — optimize with selector
 export default function Cursors() {
-  const { cursors } = useRoomStore();
+  // Only re-render when cursors object changes
+  const cursors = useRoomStore(state => state.cursors);
 
   return (
-    // Full screen overlay, pointer-events: none so it doesn't block canvas
-    <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 10 }}>
+    <div className="absolute inset-0 overflow-hidden pointer-events-none"
+         style={{ zIndex: 10 }}>
       {Object.entries(cursors).map(([userId, cursor]) => (
         <RemoteCursor
           key={userId}
@@ -91,3 +37,37 @@ export default function Cursors() {
     </div>
   );
 }
+
+// Memoize individual cursor — only re-renders when ITS position changes
+const RemoteCursor = memo(function RemoteCursor({ userId, x, y, username }) {
+  const zoom = useCanvasStore(state => state.zoom);
+  const panX = useCanvasStore(state => state.panX);
+  const panY = useCanvasStore(state => state.panY);
+
+  const screenX = x * zoom + panX;
+  const screenY = y * zoom + panY;
+  const color = getUserColor(userId);
+
+  return (
+    <div
+      className="absolute top-0 left-0 pointer-events-none"
+      style={{
+        transform: `translate(${screenX}px, ${screenY}px)`,
+        transition: 'transform 80ms linear',
+        zIndex: 10,
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none"
+           style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>
+        <path d="M3 2L17 9L10 11L7 18L3 2Z"
+              fill={color} stroke="white" strokeWidth="1" />
+      </svg>
+      <div
+        className="absolute top-5 left-1 text-xs font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap"
+        style={{ backgroundColor: color, color: 'white', fontSize: 11 }}
+      >
+        {username}
+      </div>
+    </div>
+  );
+});

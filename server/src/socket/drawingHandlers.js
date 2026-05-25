@@ -22,7 +22,11 @@ async function flushStrokes(roomId) {
     await Board.findOneAndUpdate(
       { roomId },
       {
-        $push: { strokes: { $each: strokes } },
+        $push: { strokes: {
+          $each: strokes,
+          $slice: -500, // keep only last 500 strokes per board
+        }
+      },
         $set: { lastActiveAt: new Date() },
       },
       {

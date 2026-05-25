@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import socket from '../socket/socket';
 import useObjectsStore from '../store/objectsStore';
 import useCanvasStore from '../store/canvasStore';
+import useHistoryStore from '../store/historyStore';
 
-// Debounce per object id — each object gets its own timer
 function debounce(fn, delay) {
   const timers = {};
+
   return (id, ...args) => {
     clearTimeout(timers[id]);
+
     timers[id] = setTimeout(() => {
       fn(id, ...args);
       delete timers[id];
@@ -23,6 +25,7 @@ export function useObjects() {
     removeObject,
     clearObjects,
     setObjects,
+    clearSelected,
   } = useObjectsStore();
 
   const { zoom, panX, panY } = useCanvasStore();
@@ -32,46 +35,45 @@ export function useObjects() {
     y: (sy - panY) / zoom,
   }), [zoom, panX, panY]);
 
-  // Socket listeners
+  // SOCKET LISTENERS
   useEffect(() => {
-    socket.on('object-added', (obj) => addObject(obj));
-    socket.on('object-updated', ({ id, updates }) => updateObject(id, updates));
-    socket.on('object-removed', ({ id }) => removeObject(id));
-    socket.on('objects-cleared', () => clearObjects());
-    socket.on('room-objects', (existingObjects) => setObjects(existingObjects));
+    const handleObjectAdded = (obj) => addObject(obj);
+    const handleObjectUpdated = ({ id, updates }) => updateObject(id, updates);
+    const handleObjectRemoved = ({ id }) => removeObject(id);
+    const handleObjectsCleared = () => clearObjects();
+    const handleRoomObjects = (existingObjects) => setObjects(existingObjects || {});
+    const handleBoardState = ({ objects }) => setObjects(objects || {});
 
-    const handleBoardState = ({ objects }) => {
-      if (objects && Object.keys(objects).length > 0) {
-        setObjects(objects);
-      }
-    };
+    socket.on('object-added', handleObjectAdded);
+    socket.on('object-updated', handleObjectUpdated);
+    socket.on('object-removed', handleObjectRemoved);
+    socket.on('objects-cleared', handleObjectsCleared);
+    socket.on('room-objects', handleRoomObjects);
     socket.on('board-state', handleBoardState);
 
     return () => {
-      socket.off('object-added');
-      socket.off('object-updated');
-      socket.off('object-removed');
-      socket.off('objects-cleared');
-      socket.off('room-objects');
+      socket.off('object-added', handleObjectAdded);
+      socket.off('object-updated', handleObjectUpdated);
+      socket.off('object-removed', handleObjectRemoved);
+      socket.off('objects-cleared', handleObjectsCleared);
+      socket.off('room-objects', handleRoomObjects);
       socket.off('board-state', handleBoardState);
     };
   }, [addObject, updateObject, removeObject, clearObjects, setObjects]);
 
-  // Debounced emit — sends updates to server at most every 100ms per object
-  // This prevents flooding the server during drag operations
   const debouncedEmit = useRef(
     debounce((id, updates) => {
       socket.emit('object-update', { id, updates });
     }, 100)
   ).current;
 
-  // Create sticky note
+  // CREATE STICKY NOTE
   const createStickyNote = useCallback((screenX, screenY) => {
     const worldPos = screenToWorld(screenX, screenY);
     const obj = {
       type: 'sticky',
-      x: worldPos.x - 100,
-      y: worldPos.y - 60,
+      x: worldPos.x - 100, // center horizontally on click
+      y: worldPos.y - 60,  // center vertically on click
       width: 200,
       height: 150,
       text: '',
@@ -79,12 +81,14 @@ export function useObjects() {
     };
     const created = addObject(obj);
     socket.emit('object-add', created);
+    useHistoryStore.getState().push({ type: 'object-add', object: created });
     return created;
   }, [addObject, screenToWorld]);
 
-  // Create shape
+  // CREATE SHAPE
   const createShape = useCallback((type, screenX, screenY) => {
     const worldPos = screenToWorld(screenX, screenY);
+
     const obj = {
       type,
       x: worldPos.x - 60,
@@ -95,14 +99,23 @@ export function useObjects() {
       fillColor: 'rgba(96,165,250,0.1)',
       label: '',
     };
+
     const created = addObject(obj);
+
     socket.emit('object-add', created);
+
+    useHistoryStore.getState().push({
+      type: 'object-add',
+      object: created,
+    });
+
     return created;
   }, [addObject, screenToWorld]);
 
-  // Create arrow
+  // CREATE ARROW
   const createArrow = useCallback((screenX, screenY) => {
     const worldPos = screenToWorld(screenX, screenY);
+
     const obj = {
       type: 'arrow',
       x: worldPos.x,
@@ -111,22 +124,42 @@ export function useObjects() {
       y2: worldPos.y,
       strokeColor: '#f87171',
     };
+
     const created = addObject(obj);
+
     socket.emit('object-add', created);
+
+    useHistoryStore.getState().push({
+      type: 'object-add',
+      object: created,
+    });
+
     return created;
   }, [addObject, screenToWorld]);
 
-  // Update locally immediately + debounced server emit
+  // UPDATE OBJECT
   const updateAndBroadcast = useCallback((id, updates) => {
-    updateObject(id, updates);       // instant local update
-    debouncedEmit(id, updates);      // debounced server sync
+    updateObject(id, updates);
+    debouncedEmit(id, updates);
   }, [updateObject, debouncedEmit]);
 
-  // Delete immediately — no debounce needed
+  // REMOVE OBJECT
   const removeAndBroadcast = useCallback((id) => {
+    const obj = useObjectsStore.getState().objects[id];
+
+    clearSelected();
+
     removeObject(id);
+
     socket.emit('object-remove', { id });
-  }, [removeObject]);
+
+    if (obj) {
+      useHistoryStore.getState().push({
+        type: 'object-remove',
+        object: obj,
+      });
+    }
+  }, [removeObject, clearSelected]);
 
   return {
     objects,

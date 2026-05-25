@@ -6,6 +6,7 @@ const PointSchema = new mongoose.Schema({
 }, { _id: false });
 
 const StrokeSchema = new mongoose.Schema({
+  id: { type: String, index: true }, // ← ADD THIS LINE
   points: [PointSchema],
   color: { type: String, default: '#ffffff' },
   brushSize: { type: Number, default: 4 },

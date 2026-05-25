@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useCanvas } from '../../hooks/useCanvas';
 import { useSocket } from '../../hooks/useSocket';
 import { usePanZoom } from '../../hooks/usePanZoom';
 import { useCursor } from '../../hooks/useCursor';
 import { useObjects } from '../../hooks/useObjects';
+import { useHistory } from '../../hooks/useHistory';
 import useRoomStore from '../../store/roomStore';
 import useCanvasStore from '../../store/canvasStore';
 import useObjectsStore from '../../store/objectsStore';
@@ -16,15 +17,16 @@ import socket from '../../socket/socket';
 
 export default function Canvas() {
   const { roomId } = useParams();
-  const navigate = useNavigate();
   const { username, setUsername } = useRoomStore();
   const { joinRoom } = useSocket();
-  const { zoom } = useCanvasStore();
-  const { tool } = useCanvasStore();
+  const zoom = useCanvasStore(state => state.zoom);
+  const tool = useCanvasStore(state => state.tool);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [nameInput, setNameInput] = useState('');
 
+  const { undo, redo, canUndo, canRedo } = useHistory();
   const { canvasRef, startDrawing, draw, stopDrawing, clearCanvas } = useCanvas();
+
   usePanZoom(canvasRef);
   useCursor(canvasRef);
 
@@ -37,7 +39,6 @@ export default function Canvas() {
     if (!username && savedName) setUsername(savedName);
     if (roomId && savedName) {
       joinRoom(roomId, savedName);
-      // Request existing objects when joining
       setTimeout(() => socket.emit('request-objects'), 500);
     }
   }, [roomId]);
@@ -52,9 +53,15 @@ export default function Canvas() {
     setTimeout(() => socket.emit('request-objects'), 500);
   };
 
-  // Handle canvas clicks for object placement tools
-  const handleCanvasClick = useCallback((e) => {
-    // Only fire for object tools, not pen/eraser
+  // FIX: only create objects when clicking directly on canvas
+  // not when clicking toolbar buttons
+const handleCanvasClick = useCallback((e) => {
+    // Don't create objects if clicking on an existing object
+    // (textarea, button, input inside a sticky note or shape)
+    const tag = e.target.tagName;
+    if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'BUTTON') return;
+    if (e.target !== e.currentTarget) return;
+
     if (tool === 'sticky') {
       createStickyNote(e.clientX, e.clientY);
     } else if (tool === 'rect' || tool === 'circle') {
@@ -65,10 +72,10 @@ export default function Canvas() {
   }, [tool, createStickyNote, createShape, createArrow]);
 
   const handleClearAll = useCallback(() => {
-  clearCanvas();         // clears drawn strokes
-  clearObjects();        // clears sticky notes, shapes, arrows
-  socket.emit('clear-canvas');   // tells others to clear strokes
-  socket.emit('clear-objects');  // tells others to clear objects
+    clearCanvas();
+    clearObjects();
+    socket.emit('clear-canvas');
+    socket.emit('clear-objects');
   }, [clearCanvas, clearObjects]);
 
   if (showNamePrompt) {
@@ -104,7 +111,7 @@ export default function Canvas() {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-gray-950">
 
-      {/* Layer 1: Canvas */}
+      {/* Layer 1: Canvas — onClick only fires when clicking the canvas itself */}
       <canvas
         ref={canvasRef}
         onMouseDown={startDrawing}
@@ -114,28 +121,34 @@ export default function Canvas() {
         onTouchStart={startDrawing}
         onTouchMove={draw}
         onTouchEnd={stopDrawing}
-        // Place objects on click for object tools
         onClick={handleCanvasClick}
         className="absolute top-0 left-0"
         style={{
           cursor: tool === 'pen' ? 'crosshair'
             : tool === 'eraser' ? 'cell'
             : tool === 'select' ? 'default'
-            : 'copy', // copy cursor = "click to place"
+            : 'copy',
         }}
         onContextMenu={(e) => e.preventDefault()}
       />
 
-      {/* Layer 2: Objects (sticky notes, shapes, arrows) */}
+      {/* Layer 2: Objects */}
       <ObjectsLayer />
 
-      {/* Layer 3: Remote cursors */}
+      {/* Layer 3: Cursors */}
       <Cursors />
 
       {/* Layer 4: UI */}
-      <Toolbar onClear={handleClearAll} />
+      <Toolbar
+        onClear={handleClearAll}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+      />
       <UsersPanel />
 
+      {/* Zoom indicator */}
       <div className="absolute bottom-4 right-4 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-400 font-mono select-none">
         {Math.round(zoom * 100)}%
       </div>
@@ -151,11 +164,13 @@ export default function Canvas() {
 
 function RoomLink({ roomId }) {
   const [copied, setCopied] = useState(false);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
   return (
     <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2">
       <span className="text-xs text-gray-500">Room:</span>
