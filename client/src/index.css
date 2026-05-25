@@ -43,20 +43,19 @@ body {
   min-height: 100vh;
 
   background-size: 140% 140%;
-  animation: ambientMove 18s ease infinite;
 }
 
 /* ── GLASSMORPHISM PANEL ── */
 .glass {
   background: rgba(10, 18, 32, 0.72);
 
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 
   border: 1px solid rgba(77,168,199,0.12);
 
   box-shadow:
-    0 10px 40px rgba(0,0,0,0.45),
+    0 6px 20px rgba(0,0,0,0.25),
     inset 0 1px 0 rgba(255,255,255,0.03);
 }
 
@@ -165,14 +164,6 @@ body {
 }
 .pulse-dot {
   animation: pulseDot 2s ease infinite;
-}
-
-*{
-  transition:
-    background 0.25s ease,
-    border-color 0.25s ease,
-    color 0.25s ease,
-    box-shadow 0.25s ease;
 }
 
 body::before{

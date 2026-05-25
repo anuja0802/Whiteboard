@@ -202,7 +202,7 @@ const handleCanvasClick = useCallback((e) => {
     <div
       className="absolute inset-0 pointer-events-none"
       style={{
-        opacity: 0.018,
+        opacity: 0.008,
         backgroundImage:
           'radial-gradient(rgba(255,255,255,0.4) 0.5px, transparent 0.5px)',
         backgroundSize: '3px 3px',
