@@ -94,8 +94,8 @@ whiteboard/
 │   │   │   ├── useCanvas.js         # All drawing logic
 │   │   │   ├── useSocket.js         # Socket.IO connection
 │   │   │   ├── useCursor.js         # Cursor tracking
-│   │   │   ├── usePanZoom.js        # Zoom and pan
-│   │   │   └── useWebRTC.js         # Voice rooms (Phase 8)
+│   │   │   └── usePanZoom.js        # Zoom and pan
+│   │   │   
 │   │   ├── store/
 │   │   │   ├── canvasStore.js       # Drawing state (Zustand)
 │   │   │   └── roomStore.js         # Room and users state
@@ -111,8 +111,8 @@ whiteboard/
 │   │   │   ├── index.js             # Socket.IO init
 │   │   │   ├── drawingHandlers.js   # Draw event relay
 │   │   │   ├── roomHandlers.js      # Room join / leave
-│   │   │   ├── cursorHandlers.js    # Cursor position relay
-│   │   │   └── rtcHandlers.js       # WebRTC signaling
+│   │   │   └── cursorHandlers.js    # Cursor position relay
+│   │   │ 
 │   │   ├── routes/
 │   │   │   └── boards.js            # Board REST API
 │   │   ├── models/
@@ -277,11 +277,10 @@ Each whiteboard session is a Socket.IO room. Events are only broadcast to users 
 - [x] Phase 3 — Real-time drawing sync
 - [x] Phase 4 — Infinite canvas with zoom and pan
 - [x] Phase 5 — Live cursors and users panel
-- [ ] Phase 6 — Sticky notes, shapes, arrows
-- [ ] Phase 7 — MongoDB persistence and autosave
-- [ ] Phase 8 — WebRTC voice rooms
-- [ ] Phase 9 — Undo/redo, CRDT basics
-- [ ] Phase 10 — Cyberpunk theme, animations, polish
+- [x] Phase 6 — Sticky notes, shapes, arrows
+- [x] Phase 7 — MongoDB persistence and autosave
+- [x] Phase 8 — Undo/redo, CRDT basics
+- [x] Phase 9 — Cyberpunk theme, animations, polish
 
 ---
 
@@ -300,7 +299,6 @@ This project was built to learn and demonstrate the following engineering concep
 - Stale closure problem and why refs solve it
 - CSS transform for GPU-accelerated cursor animations
 - Singleton pattern for socket connection management
-- P2P WebRTC with Socket.IO signaling
 
 ---
 
