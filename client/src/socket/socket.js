@@ -17,5 +17,8 @@ const socket = io(SOCKET_URL, {
   reconnectionAttempts: 5,
   reconnectionDelay: 1000, // Wait 1s between reconnect attempts
 });
+socket.on('connect', () => console.log('🟢 Socket connected:', socket.id));
+socket.on('disconnect', (reason) => console.log('🔴 Socket disconnected:', reason));
+socket.on('connect_error', (err) => console.error('Socket error:', err.message));
 
 export default socket;
