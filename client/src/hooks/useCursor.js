@@ -53,7 +53,7 @@ export function useCursor(canvasRef) {
   const emitCursor = useRef(
     throttle((worldPos) => {
       socket.emit('cursor-move', worldPos);
-    }, 33) // ~30fps
+    }, 50) // ~30fps -> 20fps
   ).current;
 
   useEffect(() => {

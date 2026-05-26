@@ -199,6 +199,7 @@ useEffect(() => {
       const ctx = getCtx();
       if (!ctx) return;
       const userId = data.userId;
+      if(data.userId === socket.id) return;
 
       if (data.type === 'start') {
         remoteLastPoints.current[userId] = { x: data.x, y: data.y };

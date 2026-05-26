@@ -37,7 +37,12 @@ export function useObjects() {
 
   // SOCKET LISTENERS
   useEffect(() => {
-    const handleObjectAdded = (obj) => addObject(obj);
+    const handleObjectAdded = (obj) => {
+      // Ignore our own objects — already added locally
+      if (obj.createdBy === socket.id) return;
+      addObject(obj);
+    };
+  
     const handleObjectUpdated = ({ id, updates }) => updateObject(id, updates);
     const handleObjectRemoved = ({ id }) => removeObject(id);
     const handleObjectsCleared = () => clearObjects();
@@ -72,6 +77,7 @@ export function useObjects() {
     const worldPos = screenToWorld(screenX, screenY);
     const obj = {
       type: 'sticky',
+      createdBy: socket.id, // ← ADD THIS
       x: worldPos.x - 100, // center horizontally on click
       y: worldPos.y - 60,  // center vertically on click
       width: 200,
@@ -91,6 +97,7 @@ export function useObjects() {
 
     const obj = {
       type,
+      createdBy: socket.id, // ← ADD THIS
       x: worldPos.x - 60,
       y: worldPos.y - 40,
       width: 120,
@@ -118,6 +125,7 @@ export function useObjects() {
 
     const obj = {
       type: 'arrow',
+      createdBy: socket.id, // ← ADD THIS
       x: worldPos.x,
       y: worldPos.y,
       x2: worldPos.x + 120,
