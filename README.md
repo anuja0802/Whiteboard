@@ -2,13 +2,7 @@
 
 > A full-stack multiplayer whiteboard platform where teams can draw, brainstorm, and collaborate in real-time. Built with React, Node.js, Socket.IO, and MongoDB Atlas.
 
-🔗 **[Live Demo](https://your-app.vercel.app)** · 📁 **[GitHub](https://github.com/anuja0802/whiteboard)**
-
----
-
-## 📸 Preview
-
-![CollabBoard Preview](https://via.placeholder.com/1200x600/070B14/4DA8C7?text=CollabBoard+Preview)
+🔗 **[Live Demo](https://whiteboard-collaboard.vercel.app/)** · 📁 **[GitHub](https://github.com/anuja0802/whiteboard)**
 
 ---
 
