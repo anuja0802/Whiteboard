@@ -418,6 +418,3 @@ History stores action commands, not canvas snapshots. Each command describes wha
 
 ---
 
-## 📄 License
-
-MIT License — free to use for learning or your own portfolio.
